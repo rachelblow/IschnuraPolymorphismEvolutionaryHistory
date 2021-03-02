@@ -1,0 +1,40 @@
+Begin DATA; 
+Dimensions ntax=<ntax> nchar=<nchar>;
+Format datatype=DNA gap=- missing=?; 
+Matrix 
+
+<sequences>   
+  ; 
+
+
+begin MRBAYES;
+ 
+charset 16S = 1-397;
+charset PMRT = 398-994;
+charset COI = 995-1475;
+charset D7 = 1476-2168;
+charset H3 = 2169-2496;
+partition genes = 5:16S,PMRT,COI,D7,H3;
+set partition=genes;
+lset applyto=(1,2,3,4,5) nst=6;
+lset applyto=(1,2,3,5) rates=Gamma;
+lset applyto=(4) rates=Propinv;
+prset applyto=(2,4,5) ratepr=variable;
+unlink revmat=(1,2,3,4,5) shape=(1,2,3,5) statefreq=(1,2,3,4,5);
+<constraints>
+  
+  
+  set usebeagle=no Beaglesse=no; 
+
+prset brlenspr=clock:birthdeath; 
+prset Extinctionpr = Fixed(0); 
+prset Speciationpr=exponential(1); 
+prset clockvarpr=ibr; 
+prset ibrvarpr=exponential(10); 
+mcmcp nruns=1 nchains=1 ngen=50000000 samplefreq=10000;
+mcmcp relburnin=yes burninfrac=0.20;
+mcmc; 
+
+sumt filename=<outputfile> contype=halfcompat;
+
+end; 
