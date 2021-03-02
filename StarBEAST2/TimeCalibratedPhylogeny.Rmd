@@ -1,0 +1,273 @@
+---
+title: "Time calibrated phylogeny (incl. diagnostics)"
+author:
+  - Beatriz Willink
+  - Rachel Blow
+output: 
+  pdf_document:
+    pandoc_args: --listings
+    includes:
+      in_header: aesthetics.tex
+date: "May 2020"
+---
+
+#StarBEAST2 species trees file output
+
+## Building the tree (Fig. 2)
+
+Set your working directory to the parent directory containing all of your MCMC analyses
+```{r}
+knitr::opts_knit$set(root.dir = '..' )
+```
+
+Call "treeio" and "ggtree" packages for reading and writing trees
+```{r, message = FALSE}
+require(treeio)
+require(ggtree)
+```
+
+Read in the summary tree
+```{r}
+beast_tree <- read.beast("StarBEAST2/summary.tree")
+```
+
+Rename taxa for displaying on tree
+```{r, warning = FALSE}
+relabelling <- data.frame("label" = fortify(beast_tree)$label[1:41])
+relabelling$label2 <- sub("_", " ", relabelling$label)
+relabelling$label2 <- plyr::revalue(relabelling$label2, 
+                                 c("Amorphostigma armstrongi" = "Ischnura armstrongi", 
+                                   "Amorphostigma sp." = "Ischnura sp.", 
+                                   "Rhodischnura nursei" = "Ischnura nursei"))
+
+beast_tree <- full_join(beast_tree, relabelling, by ="label")
+```
+
+Call "ggplot2" for additional plotting capability
+```{r, message = FALSE}
+require(ggplot2)
+```
+
+Create time-calibrated phylogeny displaying age-estimation uncertainty and posterior estimates
+```{r}
+tree <- ggtree(beast_tree) +
+  coord_cartesian(clip = 'off') + 
+  geom_tiplab(aes(label = label2), size=3, offset = 1) +
+  geom_nodelab(aes(x=x, label=round(posterior, 2)), hjust=1, vjust=-1.2, size=2) +
+  geom_range("height_0.95_HPD", color = "grey", size = 2, alpha = 0.7) +
+  theme_tree2(plot.margin=margin(6, 100, 6, 3)) 
+
+revts_tree <- revts(tree)
+```
+
+Save it as a PDF
+```{r}
+ggsave("Figures/Fig2.pdf", revts_tree, width = 12, height = 7)
+```
+
+#StarBEAST2 log files output
+
+Output from each independent run should be saved into its own subdirectory within the StarBEAST2 directory.
+
+### Reading in the data as mcmc objects
+
+Read in your traces and make sure they are named correctly
+```{r}
+path <- ("StarBEAST2/")
+directories <- c("run1/","run2/", "run_from_prior/")
+filename <- "starbeast.log"
+
+for (i in directories){
+  x = c(path, i, filename)
+  assign(paste("run", which(directories==i), sep=""),
+         as.data.frame(read.table(paste(x, collapse =""), header=T)))
+}
+```
+
+Remove any parameters that are not involved with the species tree and give the remaining parameters sensible names
+```{r}
+attributes(run1)$names
+
+for (i in 1:length(directories)){
+  temp <- eval(parse(text=paste("run", i, "[,c(1:8, 14, 120:122,124,126,127)]",sep = "")))
+  colnames(temp) <- c("sample", "posterior", "likelihood", "prior", "coalescent", 
+                      "population.size", "branch.rates", "root.age", 
+                      "branch.lengths.summed", "birth.death.model", 
+                      "diversification.rate", "extinction.fraction", "root.log", 
+                      "root.hyper.parameter", "root.hyper.parameter.prior")
+  assign(paste("run", i, sep = ""), temp)
+}
+```
+
+Set the variables that will be used to create your MCMC object, including 20% post-burnin used when combining posterior species trees.
+```{r}
+burnin <- floor(0.20 * nrow(run1))
+thin <- run1$sample[2] - run1$sample[1]
+start <- burnin*thin 
+end <- max(run1$sample) 
+```
+
+Call the "coda" package for creating mcmc objects
+```{r, message = FALSE}
+require(coda)
+```
+
+Make your mcmc objects and throw away the burnin
+```{r}
+for (i in 1:length(directories)){
+  temp <- eval(parse(text=paste("run", i, "[-c(1:burnin),]",sep = "")))
+  assign (paste ("mcmc",i ,sep = ""), 
+          mcmc(data = temp , start = start, end = end, thin = thin))
+}
+```
+
+Put them into a list
+```{r}
+mh.list <-mcmc.list()
+for (i in 1:length(directories)){
+      temp <- eval(parse(text=paste("mcmc", i, sep = "")))
+      mh.list[[i]] <- temp
+}
+```
+
+##Comparing log files when sampling from the prior and when sampling from the data (Fig. 3)
+
+Reshape data for root age parameter from run 1 (sampling with data) and run 3 (sampling from the prior only)
+```{r}
+reshaping <- function(x) {
+  y <- rbind(t(x[,-1]))
+  result <- setNames(as.data.frame.table(y),c("variable","run","value"))
+}
+
+for (i in 1:length(directories)){
+  temp <- eval(parse(text=paste("run", i,sep = "")))
+  reshape <- reshaping(temp)
+  reshape$run <- as.factor(rep(i, nrow(reshape)))
+  reshape <- reshape[-c(1:burnin),]
+  assign(paste("reshape", i, sep = ""), reshape)
+}
+
+plot_df <- subset(rbind(reshape1,reshape3), variable == "root.age")
+```
+
+Plot the density curves againt each other
+```{r}
+p <- ggplot(plot_df, aes(x= value, fill = run)) + 
+  geom_density(alpha = 0.3) +
+  scale_fill_manual(values=c("grey0", "goldenrod")) +
+  scale_colour_manual(values="grey0") +
+  theme_bw(base_size = 12)+
+  theme(legend.position = "none", strip.text.x = element_text(size = 6), 
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  labs(x="Age Estimation", y = "Density")
+```
+
+Save figure
+```{r}
+ggsave("Fig3.pdf", plot = p, device = NULL, path = "Figures",
+       scale = 1, width = 7, height = 5, dpi = 300, limitsize = TRUE,
+       units = "in")
+```
+
+## Diagnostics of StarBEAST2 analysis
+
+### 1) Diagnostics for a single run
+
+Create a new mh.list only including data from runs 1 and 2 (runs with data)
+```{r}
+mh.list.2 <- mcmc.list()
+for (i in 1:(length(directories)-1)){
+      temp <- eval(parse(text=paste("mcmc", i, sep = "")))
+      mh.list.2[[i]] <- temp
+}
+```
+
+#### a) Autocorrelation
+Calculate autocorrelation between draws
+```{r}
+diag(autocorr(mcmc1)[2, , ])
+```
+
+Present autocorrelation in plot form
+```{r}
+par(mfrow=c(5,3), mar=c(2,4,2,2)+0.1, cex.main = 0.9)
+autocorr.plot(mcmc1[,-1], lag.max = 25, auto.layout = F)
+```
+
+#### b) Effective sample size
+Calculate effective sample size
+```{r}
+effectiveSize(mcmc1[,-1])
+```
+
+### 2) Test for convergence of multiple runs
+
+#### a) Gelman-Rubin statistic
+Calculate Gelman-Rubin diagnostic of convergence
+```{r}
+gelman.diag(mh.list.2,confidence = 0.95, transform=TRUE, autoburnin=FALSE, multivariate=FALSE)
+```
+
+#### b) Plotting traces
+Get data into correct format for plotting traces from both runs simultaneously
+```{r}
+for (i in 2:length(run1)){
+  for (j in 1:length(directories)){
+    temp <- eval(parse(text=paste("mcmc", j, "[,i]", sep = "")))
+    assign(paste("trace_","mcmc", j, colnames(run1[i]), sep=""), temp)
+  }
+}
+
+temp_list = mcmc.list()
+for (i in 2:length(run1)){
+  for (j in 1:(length(directories)-1)){
+    temp_list[[j]] <-  eval(parse(text=paste("trace_mcmc", j , colnames(run1[i]), sep = "")))
+    assign(paste("trace_" , colnames(run1[i]), sep = ""), temp_list)
+ }
+} 
+```
+
+Plot traces
+```{r}
+par(mfrow=c(5,3), mar = c(2,4,2,2)+0.1, cex.main = 0.9)
+for (i in 2:length(run1)){
+  temp <-  eval(parse(text = paste("trace_", colnames(run1[i]), sep = ""))) 
+  traceplot(temp,col = rainbow(3, start=0.2, end=0.9))
+  title(main = colnames(run1[i]), ylab = " ")
+} 
+```
+
+#### c) Plotting density curves
+
+Get data into correct format for plotting density curves of both runs and throw out burnin
+```{r}
+reshaping <- function(x) {
+  y <- rbind(t(x[,-1]))
+  result <- setNames(as.data.frame.table(y),c("variable","run","value"))
+}
+
+for (i in 1:(length(directories)-1)){
+  temp <- eval(parse(text=paste("run", i,sep = "")))
+  reshape <- reshaping(temp)
+  reshape$run <- as.factor(rep(i, nrow(reshape)))
+  reshape <- reshape[-c(1:burnin),]
+  assign(paste("reshape", i, sep = ""), reshape)
+}
+
+plot_df <- rbind(reshape1,reshape2)
+```
+
+Plot by each parameter
+```{r}
+p <- ggplot(plot_df, aes(x= value, fill = run, colour = run)) + 
+  geom_density(alpha = 0.1) +
+  theme_bw(base_size = 12)+
+  theme(legend.position = "none", strip.text.x = element_text(size = 6), 
+      axis.text.y = element_text(size=5), axis.text.x = element_text(size=5),
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank())+
+  labs(x="Parameter value", y = "Density") +
+  facet_wrap(~variable, scales = "free", ncol = 3)
+
+p
+```
