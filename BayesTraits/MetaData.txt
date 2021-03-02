@@ -1,0 +1,37 @@
+#Terminal input:
+ cd /Volumes/GoogleDrive/My\ Drive/MPE_Paper/MCMCAnalyses/added_sequences/BayesTraits
+./BayesTraitsV3 sample.1000.trees FMorph.txt < MultistateCommand.txt
+
+#MultistateCommand file:
+
+#one selects multistate as model
+1
+#two selects Bayesian inference as method
+2
+#Number of stones and iterations per stone
+Stones 100 100000
+
+#Number of iteratations & burnin
+iterations 10000000
+burnin 1000000
+
+#Implements a reversible jump model from an exponential prior with a mean drawn from a uniform hyper-prior from 0 to 100
+RJHP exp 0 100
+
+#Add a tag for each node you want to reconstruct, it could be all nodes on your summary MAP tree, a tag with all taxa is the root
+AddTag TRecNode42 Amorphostigma_armstrongi Amorphostigma_sp. Ischnura_asiatica Ischnura_aurora Ischnura_barberi Ischnura_capreolus Ischnura_cardinalis Ischnura_cervula Ischnura_cruzi Ischnura_damula Ischnura_demorsa Ischnura_denticollis Ischnura_elegans Ischnura_erratica Ischnura_evansi Ischnura_ezoin Ischnura_fluviatilis Ischnura_fountaineae Ischnura_foylei Ischnura_gemina Ischnura_graellsii Ischnura_hastata Ischnura_heterosticta Ischnura_intermedia Ischnura_kellicotti Ischnura_pamelae Ischnura_perparva Ischnura_posita Ischnura_prognata Ischnura_pruinescens Ischnura_pumilio Ischnura_ramburii Ischnura_rufostigma Ischnura_saharensis Ischnura_senegalensis Ischnura_taitensis Ischnura_ultima Ischnura_verticalis Pacificagrion_lachrymosa Pacificagrion_sp. Rhodischnura_nursei
+
+#Reconstruct nodes
+AddNode RecNode42 TRecNode42
+
+#logfile to name this run, for example
+lf IschMultiStateR1
+
+#to run
+run
+
+#### Review schedule.file to check that chain is mixing well (acceptance should be between 20-40%)
+#### Check model is adequate by running multiple independent runs and checking ML estimate in stones.txt####
+#### Check model is adequate by running MCMC diagnostics in R####
+####You can add the sample command to reduce autocorrelation if necessary####
+####Try with ischnura ezoin as both missing data (-) and monomorphic androchrome (0)
